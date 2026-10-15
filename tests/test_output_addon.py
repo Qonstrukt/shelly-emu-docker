@@ -218,7 +218,7 @@ devices:
 def test_logging(caplog):
     import logging
 
-    caplog.set_level(logging.INFO, logger="shelly_emu.modbus_registers")
+    caplog.set_level(logging.DEBUG, logger="shelly_emu.modbus_registers")
     handle_frame(_adu(5, 100, 0xFF00), {}, addon_output=True)
     handle_frame(_adu(4, 3000, 1), {}, addon_output=True)
     handle_frame(_adu(4, 1013, 2), {}, addon_output=True)
@@ -228,5 +228,5 @@ def test_logging(caplog):
     assert ("WARNING", "modbus rejected: unit 7 FC05 addr 100 count/value 0xFF00 -> exception 02 (only coil 1100 exists)") in messages
     assert ("INFO", "modbus FC04 read outside the EM block: unit 7 addr 3000 count 1") in messages
     assert not any("1013" in m for _, m in messages)
-    assert ("INFO", "modbus FC01 read coils: unit 7 addr 1100 count 1 -> coil 1100 on") in messages
+    assert ("DEBUG", "modbus FC01 read coils: unit 7 addr 1100 count 1 -> coil 1100 on") in messages  # per-second poll
     assert any(lvl == "WARNING" and "FC06" in m and "no output add-on" in m for lvl, m in messages)

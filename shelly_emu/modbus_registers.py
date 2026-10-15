@@ -131,8 +131,9 @@ def handle_frame(
     FC01 reads it, FC05 / FC15 write it through ``write_coil``. Without the add-on the coil
     functions answer *illegal function* like a bare Pro 3EM.
 
-    Every rejected request is logged at WARNING, coil traffic at INFO and FC04 reads outside
-    the EM/EMData block at INFO, so unexpected controller behaviour shows up in the log.
+    Every rejected request is logged at WARNING, coil writes and FC04 reads outside the
+    EM/EMData block at INFO, and the per-second FC01 coil poll at DEBUG, so unexpected
+    controller behaviour shows up in the log without flooding it.
     """
     unit = frame[6]
     fc = frame[7]
@@ -175,7 +176,8 @@ def handle_frame(
                 bit = ADDON_COIL - address
                 body[2 + bit // 8] |= 1 << (bit % 8)
             pdu = bytes(body)
-            _LOGGER.info("modbus FC01 read coils: unit %d addr %d count %d -> coil %d %s",
+            # SigenStor polls this about once per second: keep it out of the default log level.
+            _LOGGER.debug("modbus FC01 read coils: unit %d addr %d count %d -> coil %d %s",
                          unit, address, count, ADDON_COIL, "on" if addon_output else "off")
     elif fc == FC_WRITE_COIL and addon:
         value = count

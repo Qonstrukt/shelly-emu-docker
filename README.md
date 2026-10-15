@@ -186,11 +186,18 @@ Notes:
 * The HTTP API is unauthenticated, as Sigen requires. Run it on a trusted LAN / VLAN.
 * `*.SetConfig` calls are acknowledged but ignored, except the device name.
 * When mySigen pairs a Pro 3EM it asks "Metering & Control" or "Metering Only". The
-  control option needs the add-on relay (`output_addon`), which the app drives through
-  `Switch.Set` on `switch:100` and/or Modbus coil 1100 (Shelly maps switch coils as
-  100 + switch id * 10). A real SigenStor used only the Modbus path. The app warns that this choice
-  cannot be changed later without removing and re-adding the device, so decide before
-  pairing and configure `output_addon` first.
+  control option needs the add-on relay (`output_addon`). Configure it **before pairing**:
+  Sigen enumerates the add-on at pairing time, and a device paired without it keeps polling
+  the coil but never writes it. The app cannot change the choice later; remove the device
+  and add it again as "Metering & Control".
+* Verified with a real SigenStor (October 2026): the Pro 3EM meter plus `output_addon` works
+  end to end. Sigen drives the relay purely over Modbus TCP: it polls coil 1100 (Shelly maps
+  switch coils as 100 + switch id * 10) with FC01 about once per second, writes it with FC05
+  when the load is toggled in the app, and reads input register 3000 once when the device
+  page opens. It never calls `Switch.Set` over HTTP for the add-on.
+* Sigen owns a load it controls. If the relay changes behind its back (a toggle in HA, or an
+  entity that switches itself off), Sigen writes its own target state back within a second
+  or two. If HA should stay in control of that entity, pair the meter as "Metering Only".
 
 ## Testing without a Sigen or without Home Assistant
 
@@ -232,6 +239,10 @@ Against a real installation: `python3 tools/validate.py http://<ip>` and, for `p
   only, Sigen cannot use them) or run with the capability / as root.
 * **Meter shows nothing in Sigen.** The SigenStor reads `pro3em` over Modbus TCP 502 after
   pairing; `tools/modbus_smoke.py <ip>` must print live values.
+* **Add-on relay does not switch from the app.** Rejected Modbus requests are logged at
+  WARNING and coil writes at INFO (`modbus FC05 write coil: ... coil 1100 <- on`). If you see
+  only FC01 polls (visible at `LOG_LEVEL=DEBUG`) and never a write, the device was paired
+  without `output_addon`: remove it in mySigen and pair again as "Metering & Control".
 
 ## Project layout
 
