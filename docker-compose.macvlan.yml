@@ -21,7 +21,7 @@ networks:
 
 x-common: &common
   build: .
-  # image: ghcr.io/qonstrukt/shelly-emu:latest
+  # image: ghcr.io/qonstrukt/shelly-emu-docker:latest
   restart: unless-stopped
   environment:
     HA_URL: http://192.168.1.10:8123

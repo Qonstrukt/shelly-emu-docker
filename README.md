@@ -81,8 +81,9 @@ Protocol findings and sources are in the ESPHome project's
    are added afterwards from the Smart Load section.
 
 The image is built from the `Dockerfile` (`python:3.12-slim`, runs as a non-root user that
-may bind ports 80 and 502). A prebuilt image is published by CI as
-`ghcr.io/qonstrukt/shelly-emu:latest` once the repository is public.
+may bind ports 80 and 502). CI publishes a prebuilt multi-arch image as
+`ghcr.io/qonstrukt/shelly-emu-docker:latest`; swap `build: .` for `image:` in the compose
+file to use it.
 
 ## Networking: one IP per emulated device
 

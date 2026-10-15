@@ -4,7 +4,7 @@
 services:
   shelly-emu:
     build: .
-    # image: ghcr.io/qonstrukt/shelly-emu:latest
+    # image: ghcr.io/qonstrukt/shelly-emu-docker:latest
     container_name: shelly-emu
     network_mode: host
     restart: unless-stopped
