@@ -1,0 +1,33 @@
+# Config for testing against tools/ha_stub.py (no real Home Assistant needed).
+# Run:  python3 tools/ha_stub.py          (fake HA on ws://127.0.0.1:8123)
+#       HA_URL=http://127.0.0.1:8123 HA_TOKEN=test shelly-emu -c examples/stub-test.yaml
+#       python3 tools/validate.py http://127.0.0.1:8080 --switch
+#       python3 tools/modbus_smoke.py 127.0.0.1 5020
+devices:
+  - model: pro4pm
+    name: "Stub plugs"
+    mac: "AABBCCDDEEFF"
+    http_port: 8080
+    mdns: false
+    channels:
+      - switch: switch.boiler
+        name: Boiler
+        power: sensor.boiler_power
+        energy: sensor.boiler_energy
+      - switch: switch.dryer
+        name: Dryer
+        power: sensor.dryer_power
+  - model: pro3em
+    name: "Stub meter"
+    mac: "AABBCCDDEE01"
+    http_port: 8081
+    modbus_port: 5020
+    mdns: false
+    em:
+      phases:
+        - power: sensor.p1_power_l1
+          voltage: sensor.p1_voltage_l1
+          energy: sensor.p1_energy_import
+          energy_returned: sensor.p1_energy_export
+        - power: sensor.p1_power_l2
+        - power: sensor.p1_power_l3

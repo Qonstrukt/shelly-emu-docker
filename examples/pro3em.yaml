@@ -1,0 +1,16 @@
+# A P1 / DSMR reader (or any per-phase power source) as a Shelly Pro 3EM grid meter.
+# Sigen reads it over Modbus TCP port 502 after pairing.
+devices:
+  - model: pro3em
+    name: "Grid meter"
+    mac: "AABBCCDDEE01"
+    em:
+      phases:
+        - power: sensor.p1_power_l1          # W, negative = export
+          voltage: sensor.p1_voltage_l1
+          energy: sensor.p1_energy_import    # whole-house counters on phase a are fine for Sigen totals
+          energy_returned: sensor.p1_energy_export
+        - power: sensor.p1_power_l2
+          voltage: sensor.p1_voltage_l2
+        - power: sensor.p1_power_l3
+          voltage: sensor.p1_voltage_l3

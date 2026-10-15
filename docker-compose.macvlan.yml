@@ -1,0 +1,47 @@
+# Several emulated devices, each in its own container with its own LAN IP (macvlan).
+# Sigen identifies a Shelly by IP address and always uses ports 80 and 502, so every
+# emulated device needs its own address. Adjust parent interface, subnet, gateway and
+# the addresses to your LAN. The ip_range keeps Docker from handing out addresses your
+# DHCP server also uses; reserve them in the router or exclude them from DHCP.
+#
+# Caveat: with macvlan the Docker host itself cannot talk to these containers (kernel
+# limitation). If Home Assistant runs on the same host, point HA_URL at an address of
+# HA that is not the host's macvlan parent (another interface, a reverse proxy, or add
+# a macvlan shim interface on the host: `ip link add macvlan-shim link eth0 type macvlan mode bridge`).
+networks:
+  lan:
+    driver: macvlan
+    driver_opts:
+      parent: eth0
+    ipam:
+      config:
+        - subnet: 192.168.1.0/24
+          gateway: 192.168.1.1
+          ip_range: 192.168.1.240/28
+
+x-common: &common
+  build: .
+  # image: ghcr.io/qonstrukt/shelly-emu:latest
+  restart: unless-stopped
+  environment:
+    HA_URL: http://192.168.1.10:8123
+    HA_TOKEN: ${HA_TOKEN}
+
+services:
+  shelly-plugs:
+    <<: *common
+    container_name: shelly-plugs
+    networks:
+      lan:
+        ipv4_address: 192.168.1.241
+    volumes:
+      - ./examples/pro4pm.yaml:/config/config.yaml:ro
+
+  shelly-meter:
+    <<: *common
+    container_name: shelly-meter
+    networks:
+      lan:
+        ipv4_address: 192.168.1.242
+    volumes:
+      - ./examples/pro3em.yaml:/config/config.yaml:ro

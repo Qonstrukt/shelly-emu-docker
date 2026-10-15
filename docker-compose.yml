@@ -1,0 +1,17 @@
+# Single emulated device with host networking: the container uses the Docker host's IP,
+# so mDNS discovery works and Sigen reaches port 80 / 502 on the host's address.
+# Not for Docker Desktop on macOS/Windows unless "host networking" is enabled there.
+services:
+  shelly-emu:
+    build: .
+    # image: ghcr.io/qonstrukt/shelly-emu:latest
+    container_name: shelly-emu
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      HA_URL: http://192.168.1.10:8123      # your Home Assistant
+      HA_TOKEN: ${HA_TOKEN}                 # long-lived access token (put it in .env)
+      # ADVERTISE_IP: 192.168.1.20          # only if auto-detection picks the wrong interface
+      # LOG_LEVEL: DEBUG
+    volumes:
+      - ./config.yaml:/config/config.yaml:ro

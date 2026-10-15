@@ -1,0 +1,21 @@
+# Four Home Assistant smart plugs as one Shelly Pro 4PM (verified with mySigen on the ESPHome port).
+devices:
+  - model: pro4pm
+    name: "Smart plugs"
+    mac: "AABBCCDDEEFF"
+    channels:
+      - switch: switch.boiler
+        name: Boiler
+        power: sensor.boiler_power
+        energy: sensor.boiler_energy
+      - switch: switch.dryer
+        name: Dryer
+        power: sensor.dryer_power
+        energy: sensor.dryer_energy
+      - switch: switch.pool_pump
+        name: Pool pump
+        power: sensor.pool_pump_power
+      - switch: switch.ev_charger
+        name: EV charger
+        power: sensor.ev_charger_power
+        energy: sensor.ev_charger_energy

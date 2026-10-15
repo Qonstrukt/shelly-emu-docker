@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shelly-emu"
+version = "0.1.0"
+description = "Emulate Shelly Gen2 devices on the LAN, backed by Home Assistant, for Sigenergy SigenStor / mySigen"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.12"
+authors = [{name = "Stefan Moonen", email = "stefan.moonen@gmail.com"}]
+dependencies = [
+    "aiohttp>=3.9,<4",
+    "zeroconf>=0.131",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+shelly-emu = "shelly_emu.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["shelly_emu*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
