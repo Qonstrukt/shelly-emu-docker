@@ -144,8 +144,17 @@ def _parse_em(raw: Any, where: str) -> EmBinding:
 
 DEVICE_KEYS = {
     "model", "name", "mac", "model_code", "firmware_version", "fw_id", "timezone", "wifi_ssid",
-    "bind", "ip", "http_port", "mdns", "modbus", "modbus_port", "channels", "em",
+    "bind", "ip", "http_port", "mdns", "modbus", "modbus_port", "channels", "em", "output_addon",
 }  # fmt: skip
+
+
+def _parse_output_addon(raw: Any, where: str) -> ChannelBinding:
+    if not isinstance(raw, dict) or not isinstance(raw.get("switch"), str):
+        raise ConfigError(f"{where}: 'output_addon' needs a 'switch' entity id")
+    unknown = set(raw) - {"switch", "name"}
+    if unknown:
+        raise ConfigError(f"{where}: unknown keys {sorted(unknown)}")
+    return ChannelBinding(switch=raw["switch"], name=_str(raw, "name", "", where=where) or "")
 
 
 def parse_device(raw: Any, index: int) -> DeviceConfig:
@@ -168,6 +177,16 @@ def parse_device(raw: Any, index: int) -> DeviceConfig:
     em = _parse_em(raw["em"], f"{where}.em") if "em" in raw else None
     if info.is_meter and em is None:
         raise ConfigError(f"{where}: model '{model}' needs an 'em' section")
+    output_addon = "output_addon" in raw
+    if output_addon:
+        if not info.is_meter:
+            raise ConfigError(f"{where}: 'output_addon' is only available for model 'pro3em'")
+        if channels:
+            raise ConfigError(f"{where}: model '{model}' has no 'channels'; the add-on relay is 'output_addon'")
+        # The add-on relay is channel 0 of the device, exposed as Shelly component switch:100.
+        channels = [_parse_output_addon(raw["output_addon"], f"{where}.output_addon")]
+    elif info.is_meter and channels:
+        raise ConfigError(f"{where}: model '{model}' has no switch channels; use 'output_addon' for the Pro Output Add-on relay")
 
     switch_specs = [
         SwitchChannelSpec(
@@ -198,6 +217,7 @@ def parse_device(raw: Any, index: int) -> DeviceConfig:
             modbus_port=int(raw.get("modbus_port", 502)),
             switches=switch_specs,
             em=em_spec,
+            output_addon=output_addon,
         )
     except ValueError as err:
         raise ConfigError(f"{where}: {err}") from None

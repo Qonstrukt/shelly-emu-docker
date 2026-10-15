@@ -86,13 +86,17 @@ class RpcDispatcher:
         self.dev = device
 
     # ------------------------------------------------------------------ Switch / Input
-    def switch_status(self, cid: int, s: SwitchState) -> JsonObj:
+    def switch_status(self, index: int, s: SwitchState) -> JsonObj:
         now = self.dev.now()
         ts = _minute_ts(now)
         if s.temp is None:
             temp = {"tC": 0.0, "tF": 32.0}
         else:
             temp = {"tC": r1(s.temp), "tF": r1(s.temp * 9.0 / 5.0 + 32.0)}
+        cid = self.dev.switch_component_id(index)
+        if self.dev.spec.output_addon:
+            # Pro Output Add-on relay: no power metering, just the output state.
+            return {"id": cid, "source": "init", "output": s.output, "temperature": temp}
         return {
             "id": cid,
             "source": "init",
@@ -116,8 +120,19 @@ class RpcDispatcher:
             "temperature": temp,
         }
 
-    def switch_config(self, cid: int) -> JsonObj:
-        name = self.dev.channel_name(cid)
+    def switch_config(self, index: int) -> JsonObj:
+        name = self.dev.channel_name(index)
+        cid = self.dev.switch_component_id(index)
+        if self.dev.spec.output_addon:
+            return {
+                "id": cid,
+                "name": name or None,
+                "initial_state": "restore_last",
+                "auto_on": False,
+                "auto_on_delay": 60.0,
+                "auto_off": False,
+                "auto_off_delay": 60.0,
+            }
         return {
             "id": cid,
             "name": name or None,
@@ -246,7 +261,7 @@ class RpcDispatcher:
             device["profile"] = dev.model.profile
         device.update(
             {
-                "addon_type": None,
+                "addon_type": "prooutput" if dev.has_output_addon else None,
                 "sys_btn_toggle": False,
                 "tls_check_cert_validity_time": True,
                 "enhanced_security": False,
@@ -404,8 +419,7 @@ class RpcDispatcher:
         if m.is_meter:
             keys.append("modbus")
         keys.append("mqtt")
-        if not m.is_meter:
-            keys += [f"switch:{i}" for i in range(dev.switch_count)]
+        keys += [f"switch:{dev.switch_component_id(i)}" for i in range(dev.switch_count)]
         keys.append("sys")
         if m.is_meter:
             keys.append("temperature:0")
@@ -431,8 +445,8 @@ class RpcDispatcher:
         if key == "mqtt":
             return self.mqtt_status()
         if key.startswith("switch:"):
-            cid = int(key[7:])
-            return self.switch_status(cid, snap.sw[cid])
+            index = self.dev.switch_index_for_id(int(key[7:]))
+            return None if index < 0 else self.switch_status(index, snap.sw[index])
         if key == "sys":
             return self.sys_status()
         if key == "temperature:0":
@@ -463,7 +477,8 @@ class RpcDispatcher:
         if key == "mqtt":
             return self.mqtt_config()
         if key.startswith("switch:"):
-            return self.switch_config(int(key[7:]))
+            index = self.dev.switch_index_for_id(int(key[7:]))
+            return None if index < 0 else self.switch_config(index)
         if key == "sys":
             return self.sys_config()
         if key == "temperature:0":
@@ -518,6 +533,11 @@ class RpcDispatcher:
                 "EM.GetStatus", "EM.GetConfig", "EMData.GetStatus", "EMData.GetConfig",
                 "Temperature.GetStatus", "Temperature.GetConfig", "Modbus.GetStatus", "Modbus.GetConfig",
             ]  # fmt: skip
+            if self.dev.has_output_addon:
+                methods += [
+                    "Switch.GetStatus", "Switch.GetConfig", "Switch.SetConfig", "Switch.Set", "Switch.Toggle",
+                    "ProOutputAddon.GetPeripherals", "ProOutputAddon.AddPeripheral", "ProOutputAddon.RemovePeripheral",
+                ]  # fmt: skip
         else:
             methods += [
                 "Switch.GetStatus", "Switch.GetConfig", "Switch.SetConfig", "Switch.Set", "Switch.Toggle",
@@ -629,12 +649,21 @@ class RpcDispatcher:
             return {"scripts": []}
         if is_("KVS.GetMany") or is_("KVS.List"):
             return {"items": {}, "offset": 0, "total": 0, "rev": 0}
+        # ---- Pro Output Add-on (pro3em with output_addon) ----
+        if is_("ProOutputAddon.GetPeripherals"):
+            if not dev.has_output_addon:
+                raise RpcError.method_not_found()
+            return {"digital_out": {f"switch:{dev.switch_component_id(i)}": {} for i in range(dev.switch_count)}}
+        if is_("ProOutputAddon.AddPeripheral") or is_("ProOutputAddon.RemovePeripheral"):
+            if not dev.has_output_addon:
+                raise RpcError.method_not_found()
+            raise RpcError(-108, "Peripheral configuration is fixed on this device")
         # ---- Switch / Input ----
         if m.startswith("switch.") or m.startswith("input."):
-            if dev.is_meter:
+            if dev.is_meter and (not dev.has_output_addon or m.startswith("input.")):
                 raise RpcError.method_not_found()
-            cid = param_id(p)
-            if cid < 0 or cid >= dev.switch_count:
+            cid = dev.switch_index_for_id(param_id(p))
+            if cid < 0:
                 raise RpcError.invalid_argument("id")
             if is_("Switch.GetStatus"):
                 return self.switch_status(cid, snap.sw[cid])

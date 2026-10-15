@@ -21,7 +21,7 @@ Emulated models:
 | `plus1pm`   | Shelly Plus 1PM    | 1 switch      | smart load                  |
 | `plus2pm`   | Shelly Plus 2PM    | 2 switch      | smart load                  |
 | `plusplugs` | Shelly Plus Plug S | 1 switch      | smart load                  |
-| `pro3em`    | Shelly Pro 3EM     | 3-phase meter | energy meter (Modbus TCP)   |
+| `pro3em`    | Shelly Pro 3EM     | 3-phase meter, optional add-on relay | energy meter (Modbus TCP), "Metering & Control" with `output_addon` |
 
 What the service provides, per emulated device:
 
@@ -33,6 +33,9 @@ What the service provides, per emulated device:
   (TXT `gen=2`, `app`, `ver`) and `_http._tcp`, instance name = Shelly id, IP TTL 255.
 * **Modbus TCP** on port 502 (`pro3em`) with the Pro 3EM register map (FC04, CDAB float
   word order), which is how the SigenStor polls meters after enrollment.
+* **Shelly Pro Output Add-on** relay on `pro3em` (`output_addon`): exposed as component
+  `switch:100` with `addon_type: prooutput`, the `ProOutputAddon.*` methods and Modbus
+  coil 100 (FC01/FC05/FC15), so mySigen can pair the meter as "Metering & Control".
 * **Home Assistant bridge**: channel outputs are HA switches (or lights, input_booleans),
   power / voltage / energy values are HA sensors, read over the HA WebSocket API.
   `Switch.Set` from Sigen becomes `switch.turn_on` / `turn_off` in HA. The output is
@@ -153,6 +156,9 @@ devices:
     name: "Grid meter"
     mac: "AABBCCDDEE01"
     bind: 192.168.1.21        # second device in the same container needs its own address
+    output_addon:             # pro3em only: emulate the Shelly Pro Output Add-on relay
+      switch: switch.boiler   #   exposed as switch:100; needed for "Metering & Control" in mySigen
+      name: Boiler
     em:
       energy_unit: kWh
       neutral_current: ...    # optional
@@ -179,6 +185,11 @@ Notes:
   is unreachable the last known values are kept and the service reconnects with backoff.
 * The HTTP API is unauthenticated, as Sigen requires. Run it on a trusted LAN / VLAN.
 * `*.SetConfig` calls are acknowledged but ignored, except the device name.
+* When mySigen pairs a Pro 3EM it asks "Metering & Control" or "Metering Only". The
+  control option needs the add-on relay (`output_addon`), which the app drives through
+  `Switch.Set` on `switch:100` and/or Modbus coil 100. The app warns that this choice
+  cannot be changed later without removing and re-adding the device, so decide before
+  pairing and configure `output_addon` first.
 
 ## Testing without a Sigen or without Home Assistant
 

@@ -23,6 +23,9 @@ devices:
     http_port: 8081
     modbus_port: 5020
     mdns: false
+    output_addon:
+      switch: switch.heat_pump
+      name: Heat pump
     em:
       phases:
         - power: sensor.p1_power_l1

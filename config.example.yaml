@@ -55,6 +55,9 @@ devices:
   #   name: "Grid meter"
   #   mac: "AABBCCDDEE01"
   #   bind: 192.168.1.21
+  #   output_addon:           # optional: Shelly Pro Output Add-on relay, exposed as switch:100.
+  #     switch: switch.boiler #   Needed for "Metering & Control" in mySigen (decide before pairing,
+  #     name: Boiler          #   the app cannot change it later without removing the device).
   #   em:
   #     energy_unit: kWh
   #     # neutral_current: sensor.p1_current_n

@@ -21,6 +21,7 @@ from .state import EmPhaseState, EmState, Snapshot, SwitchState
 _LOGGER = logging.getLogger(__name__)
 
 OPTIMISTIC_SECONDS = 5.0
+ADDON_SWITCH_ID = 100  # Shelly add-on peripheral ids are 100..199
 
 SWITCH_FIELDS = ("power", "voltage", "current", "energy", "energy_returned", "frequency", "power_factor", "temperature")
 PHASE_FIELDS = ("voltage", "current", "power", "apparent_power", "power_factor", "frequency", "energy", "energy_returned")
@@ -66,6 +67,8 @@ class DeviceSpec:
     modbus_port: int = 502
     switches: list[SwitchChannelSpec] = field(default_factory=list)
     em: EmSpec | None = None
+    # Pro 3EM with the Shelly Pro Output Add-on: ``switches[0]`` is exposed as switch:100.
+    output_addon: bool = False
 
     def __post_init__(self) -> None:
         if self.model not in MODELS:
@@ -73,13 +76,20 @@ class DeviceSpec:
         self.mac = normalize_mac(self.mac)
         info = MODELS[self.model]
         if info.is_meter:
-            if self.switches:
-                raise ValueError(f"model {self.model!r} has no switch channels")
+            if self.output_addon:
+                if len(self.switches) != 1:
+                    raise ValueError("output_addon needs exactly one switch channel")
+            elif self.switches:
+                raise ValueError(
+                    f"model {self.model!r} has no switch channels; use 'output_addon' for the Pro Output Add-on relay"
+                )
             if self.em is None:
                 self.em = EmSpec()
         else:
             if self.em is not None:
                 raise ValueError(f"model {self.model!r} is not an energy meter")
+            if self.output_addon:
+                raise ValueError("'output_addon' is only available for model 'pro3em'")
             if not self.switches:
                 raise ValueError("at least one switch channel is required")
             if len(self.switches) > info.switches:
@@ -151,6 +161,19 @@ class ShellyDevice:
     @property
     def switch_count(self) -> int:
         return len(self._switches)
+
+    @property
+    def has_output_addon(self) -> bool:
+        return self.spec.output_addon and self.switch_count > 0
+
+    def switch_component_id(self, index: int) -> int:
+        """Shelly component id of channel ``index`` (0..n for switch devices, 100 for the add-on relay)."""
+        return ADDON_SWITCH_ID + index if self.spec.output_addon else index
+
+    def switch_index_for_id(self, cid: int) -> int:
+        """Channel index for a Shelly switch id, or -1 if the id does not exist."""
+        index = cid - ADDON_SWITCH_ID if self.spec.output_addon else cid
+        return index if 0 <= index < self.switch_count else -1
 
     @property
     def uptime(self) -> int:
@@ -289,7 +312,7 @@ class ShellyDevice:
         s.optimistic = True
         s.optimistic_state = on
         s.optimistic_until = self._clock() + OPTIMISTIC_SECONDS
-        _LOGGER.info("%s switch:%d -> %s", self.device_id, ch, "on" if on else "off")
+        _LOGGER.info("%s switch:%d -> %s", self.device_id, self.switch_component_id(ch), "on" if on else "off")
         if self.on_switch is not None:
             self.on_switch(ch, on)
         return was_on

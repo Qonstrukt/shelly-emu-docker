@@ -30,9 +30,18 @@ class ModbusServer:
             await self._server.wait_closed()
             self._server = None
 
+    def _addon_output(self, snap) -> bool | None:
+        return snap.sw[0].output if self.device.has_output_addon else None
+
     def registers(self):
         snap = self.device.snapshot()
-        return build_register_map(snap.em, self.device.mac, self.device.model_code, self.device.now())
+        return build_register_map(
+            snap.em, self.device.mac, self.device.model_code, self.device.now(), self._addon_output(snap)
+        )
+
+    def _write_coil(self, on: bool) -> None:
+        _LOGGER.info("%s Modbus coil 100 <- %s", self.device.device_id, "on" if on else "off")
+        self.device.request_switch(0, on)
 
     async def _client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         peer = writer.get_extra_info("peername")
@@ -55,10 +64,13 @@ class ModbusServer:
                     frames = split_frames(buf)
                 except ValueError:
                     break
+                for frame in frames:
+                    snap = self.device.snapshot()
+                    regs = build_register_map(
+                        snap.em, self.device.mac, self.device.model_code, self.device.now(), self._addon_output(snap)
+                    )
+                    writer.write(handle_frame(frame, regs, self._addon_output(snap), self._write_coil))
                 if frames:
-                    regs = self.registers()
-                    for frame in frames:
-                        writer.write(handle_frame(frame, regs))
                     await writer.drain()
         except (ConnectionError, asyncio.IncompleteReadError):
             pass

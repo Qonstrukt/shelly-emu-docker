@@ -4,6 +4,10 @@ devices:
   - model: pro3em
     name: "Grid meter"
     mac: "AABBCCDDEE01"
+    # Pro Output Add-on relay (switch:100), lets mySigen pair the meter as "Metering & Control":
+    # output_addon:
+    #   switch: switch.boiler
+    #   name: Boiler
     em:
       phases:
         - power: sensor.p1_power_l1          # W, negative = export
