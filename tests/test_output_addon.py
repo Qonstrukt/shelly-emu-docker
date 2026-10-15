@@ -133,18 +133,19 @@ def test_register_3000():
 
 
 def test_read_coils():
-    on = handle_frame(_adu(1, 100, 1), {}, addon_output=True)
+    assert ADDON_COIL == 1100  # 100 + switch_id * 10, switch:100
+    on = handle_frame(_adu(1, 1100, 1), {}, addon_output=True)
     assert on[6:] == bytes([7, 1, 1, 0x01])
-    off = handle_frame(_adu(1, 100, 1), {}, addon_output=False)
+    off = handle_frame(_adu(1, 1100, 1), {}, addon_output=False)
     assert off[6:] == bytes([7, 1, 1, 0x00])
-    # range covering 100 at a bit offset: coils 96..111 -> bit 4 of byte 0
-    wide = handle_frame(_adu(1, 96, 16), {}, addon_output=True)
+    # range covering 1100 at a bit offset: coils 1096..1111 -> bit 4 of byte 0
+    wide = handle_frame(_adu(1, 1096, 16), {}, addon_output=True)
     assert wide[6:] == bytes([7, 1, 2, 0x10, 0x00])
-    for addr, count in ((0, 100), (101, 5), (100, 0), (0, 2001)):
+    for addr, count in ((0, 100), (100, 1), (1000, 100), (1101, 5), (1100, 0), (0, 2001)):
         resp = handle_frame(_adu(1, addr, count), {}, addon_output=True)
         assert resp[7:9] == bytes([0x81, EX_ILLEGAL_ADDRESS]), (addr, count)
     # without the add-on the coil functions stay unsupported
-    for frame in (_adu(1, 100, 1), _adu(5, 100, 0xFF00), _adu(15, 100, 1) + b"\x01\x01"):
+    for frame in (_adu(1, 1100, 1), _adu(5, 1100, 0xFF00), _adu(15, 1100, 1) + b"\x01\x01"):
         resp = handle_frame(frame, {})
         assert resp[7] & 0x80 and resp[8] == EX_ILLEGAL_FUNCTION
 
@@ -158,8 +159,10 @@ def test_write_single_coil():
     assert writes == [True, False] and resp[7] == 5
     resp = handle_frame(_adu(5, ADDON_COIL, 0x1234), {}, addon_output=True, write_coil=writes.append)
     assert resp[7:9] == bytes([0x85, EX_ILLEGAL_VALUE]) and writes == [True, False]
-    resp = handle_frame(_adu(5, 0, 0xFF00), {}, addon_output=True, write_coil=writes.append)
-    assert resp[7:9] == bytes([0x85, EX_ILLEGAL_ADDRESS])
+    for addr in (0, 100, 1101):
+        resp = handle_frame(_adu(5, addr, 0xFF00), {}, addon_output=True, write_coil=writes.append)
+        assert resp[7:9] == bytes([0x85, EX_ILLEGAL_ADDRESS])
+    assert writes == [True, False]
 
 
 def test_write_multiple_coils():
@@ -172,8 +175,9 @@ def test_write_multiple_coils():
     assert writes == [True, False] and resp[7] == 15
     resp = handle_frame(_adu(15, ADDON_COIL, 2) + b"\x01\x03", {}, addon_output=True, write_coil=writes.append)
     assert resp[7:9] == bytes([0x8F, EX_ILLEGAL_ADDRESS])
-    resp = handle_frame(_adu(15, 0, 1) + b"\x01\x01", {}, addon_output=True, write_coil=writes.append)
-    assert resp[7:9] == bytes([0x8F, EX_ILLEGAL_ADDRESS])
+    for addr in (0, 100):
+        resp = handle_frame(_adu(15, addr, 1) + b"\x01\x01", {}, addon_output=True, write_coil=writes.append)
+        assert resp[7:9] == bytes([0x8F, EX_ILLEGAL_ADDRESS])
     assert writes == [True, False]
 
 
@@ -209,3 +213,20 @@ devices:
         p.write_text(body)
         with pytest.raises(ConfigError, match=match):
             load_config(p, ENV)
+
+
+def test_logging(caplog):
+    import logging
+
+    caplog.set_level(logging.INFO, logger="shelly_emu.modbus_registers")
+    handle_frame(_adu(5, 100, 0xFF00), {}, addon_output=True)
+    handle_frame(_adu(4, 3000, 1), {}, addon_output=True)
+    handle_frame(_adu(4, 1013, 2), {}, addon_output=True)
+    handle_frame(_adu(1, 1100, 1), {}, addon_output=True)
+    handle_frame(_adu(6, 1, 1), {})
+    messages = [(r.levelname, r.getMessage()) for r in caplog.records]
+    assert ("WARNING", "modbus rejected: unit 7 FC05 addr 100 count/value 0xFF00 -> exception 02 (only coil 1100 exists)") in messages
+    assert ("INFO", "modbus FC04 read outside the EM block: unit 7 addr 3000 count 1") in messages
+    assert not any("1013" in m for _, m in messages)
+    assert ("INFO", "modbus FC01 read coils: unit 7 addr 1100 count 1 -> coil 1100 on") in messages
+    assert any(lvl == "WARNING" and "FC06" in m and "no output add-on" in m for lvl, m in messages)

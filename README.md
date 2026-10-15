@@ -35,7 +35,7 @@ What the service provides, per emulated device:
   word order), which is how the SigenStor polls meters after enrollment.
 * **Shelly Pro Output Add-on** relay on `pro3em` (`output_addon`): exposed as component
   `switch:100` with `addon_type: prooutput`, the `ProOutputAddon.*` methods and Modbus
-  coil 100 (FC01/FC05/FC15), so mySigen can pair the meter as "Metering & Control".
+  coil 1100 (FC01/FC05/FC15), so mySigen can pair the meter as "Metering & Control".
 * **Home Assistant bridge**: channel outputs are HA switches (or lights, input_booleans),
   power / voltage / energy values are HA sensors, read over the HA WebSocket API.
   `Switch.Set` from Sigen becomes `switch.turn_on` / `turn_off` in HA. The output is
@@ -187,7 +187,8 @@ Notes:
 * `*.SetConfig` calls are acknowledged but ignored, except the device name.
 * When mySigen pairs a Pro 3EM it asks "Metering & Control" or "Metering Only". The
   control option needs the add-on relay (`output_addon`), which the app drives through
-  `Switch.Set` on `switch:100` and/or Modbus coil 100. The app warns that this choice
+  `Switch.Set` on `switch:100` and/or Modbus coil 1100 (Shelly maps switch coils as
+  100 + switch id * 10). A real SigenStor used only the Modbus path. The app warns that this choice
   cannot be changed later without removing and re-adding the device, so decide before
   pairing and configure `output_addon` first.
 

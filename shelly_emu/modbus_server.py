@@ -40,7 +40,6 @@ class ModbusServer:
         )
 
     def _write_coil(self, on: bool) -> None:
-        _LOGGER.info("%s Modbus coil 100 <- %s", self.device.device_id, "on" if on else "off")
         self.device.request_switch(0, on)
 
     async def _client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:

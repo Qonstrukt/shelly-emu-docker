@@ -8,10 +8,13 @@ address* as the real device does.
 
 from __future__ import annotations
 
+import logging
 import struct
 from collections.abc import Callable
 
 from .state import EmState
+
+_LOGGER = logging.getLogger(__name__)
 
 FC_READ_COILS = 0x01
 FC_READ_HOLDING = 0x03
@@ -22,9 +25,14 @@ EX_ILLEGAL_FUNCTION = 0x01
 EX_ILLEGAL_ADDRESS = 0x02
 EX_ILLEGAL_VALUE = 0x03
 
-# Pro Output Add-on relay (switch:100): coil 100, plus the generic Switch input-register block.
-ADDON_COIL = 100
-ADDON_SWITCH_REG = 3000  # docs 33000: switch output status
+# Pro Output Add-on relay (switch:100). Shelly maps switch coils as 100 + switch_id * 10
+# (switch:0 -> 100, switch:100 -> 1100); the input-register block of the first switch
+# component is at docs address 33000, wire address 3000.
+ADDON_SWITCH_ID = 100
+ADDON_COIL = 100 + ADDON_SWITCH_ID * 10  # 1100
+ADDON_SWITCH_REG = 3000
+# EM / EMData input registers live here; reads elsewhere are worth a log line.
+EM_BLOCK = range(1000, 1241)
 
 RegisterMap = dict[int, int]
 
@@ -119,33 +127,45 @@ def handle_frame(
 ) -> bytes:
     """Answer one Modbus TCP ADU (MBAP header + PDU). ``frame`` is a complete frame.
 
-    With the Pro Output Add-on (``addon_output`` not ``None``) coil 100 reflects the relay:
+    With the Pro Output Add-on (``addon_output`` not ``None``) coil 1100 reflects the relay:
     FC01 reads it, FC05 / FC15 write it through ``write_coil``. Without the add-on the coil
     functions answer *illegal function* like a bare Pro 3EM.
+
+    Every rejected request is logged at WARNING, coil traffic at INFO and FC04 reads outside
+    the EM/EMData block at INFO, so unexpected controller behaviour shows up in the log.
     """
     unit = frame[6]
     fc = frame[7]
     addon = addon_output is not None
+    address = count = None
+    if len(frame) >= 12:
+        address, count = struct.unpack(">HH", frame[8:12])
 
-    def exception(code: int) -> bytes:
+    def exception(code: int, why: str) -> bytes:
+        _LOGGER.warning(
+            "modbus rejected: unit %d FC%02X addr %s count/value %s -> exception %02X (%s)",
+            unit, fc, address, count if count is None else f"0x{count:04X}" if fc == FC_WRITE_COIL else count, code, why,
+        )
         return bytes([fc | 0x80, code])
 
-    if len(frame) < 12:
-        pdu = exception(EX_ILLEGAL_FUNCTION)
+    if address is None or count is None:
+        pdu = exception(EX_ILLEGAL_FUNCTION, "short frame")
     elif fc in (FC_READ_INPUT, FC_READ_HOLDING):
-        address, count = struct.unpack(">HH", frame[8:12])
-        if count < 1 or count > 125 or fc == FC_READ_HOLDING:
+        if fc == FC_READ_HOLDING:
             # A real Pro 3EM answers holding-register reads with "illegal data address".
-            pdu = exception(EX_ILLEGAL_ADDRESS)
+            pdu = exception(EX_ILLEGAL_ADDRESS, "holding registers are not served")
+        elif count < 1 or count > 125:
+            pdu = exception(EX_ILLEGAL_ADDRESS, "bad count")
         else:
+            if address not in EM_BLOCK or address + count - 1 not in EM_BLOCK:
+                _LOGGER.info("modbus FC04 read outside the EM block: unit %d addr %d count %d", unit, address, count)
             body = bytearray([fc, count * 2])
             for i in range(count):
                 body += struct.pack(">H", regs.get(address + i, 0))
             pdu = bytes(body)
     elif fc == FC_READ_COILS and addon:
-        address, count = struct.unpack(">HH", frame[8:12])
         if count < 1 or count > 2000 or address > ADDON_COIL or address + count <= ADDON_COIL:
-            pdu = exception(EX_ILLEGAL_ADDRESS)
+            pdu = exception(EX_ILLEGAL_ADDRESS, f"range does not cover coil {ADDON_COIL}")
         else:
             n_bytes = (count + 7) // 8
             body = bytearray(2 + n_bytes)
@@ -155,26 +175,31 @@ def handle_frame(
                 bit = ADDON_COIL - address
                 body[2 + bit // 8] |= 1 << (bit % 8)
             pdu = bytes(body)
+            _LOGGER.info("modbus FC01 read coils: unit %d addr %d count %d -> coil %d %s",
+                         unit, address, count, ADDON_COIL, "on" if addon_output else "off")
     elif fc == FC_WRITE_COIL and addon:
-        address, value = struct.unpack(">HH", frame[8:12])
+        value = count
         if address != ADDON_COIL:
-            pdu = exception(EX_ILLEGAL_ADDRESS)
+            pdu = exception(EX_ILLEGAL_ADDRESS, f"only coil {ADDON_COIL} exists")
         elif value not in (0xFF00, 0x0000):
-            pdu = exception(EX_ILLEGAL_VALUE)
+            pdu = exception(EX_ILLEGAL_VALUE, "coil value must be 0xFF00 or 0x0000")
         else:
+            on = value == 0xFF00
+            _LOGGER.info("modbus FC05 write coil: unit %d coil %d <- %s", unit, address, "on" if on else "off")
             if write_coil is not None:
-                write_coil(value == 0xFF00)
+                write_coil(on)
             pdu = bytes(frame[7:12])  # echo the request
     elif fc == FC_WRITE_COILS and addon:
-        address, count = struct.unpack(">HH", frame[8:12])
         if address != ADDON_COIL or count != 1 or len(frame) < 14:
-            pdu = exception(EX_ILLEGAL_ADDRESS)
+            pdu = exception(EX_ILLEGAL_ADDRESS, f"only coil {ADDON_COIL}, count 1, is writable")
         else:
+            on = (frame[13] & 0x01) != 0
+            _LOGGER.info("modbus FC15 write coils: unit %d coil %d <- %s", unit, address, "on" if on else "off")
             if write_coil is not None:
-                write_coil((frame[13] & 0x01) != 0)
+                write_coil(on)
             pdu = bytes(frame[7:12])
     else:
-        pdu = exception(EX_ILLEGAL_FUNCTION)
+        pdu = exception(EX_ILLEGAL_FUNCTION, "unsupported function" + ("" if addon else " (no output add-on configured)"))
     return frame[0:2] + b"\x00\x00" + struct.pack(">HB", len(pdu) + 1, unit) + pdu
 
 
