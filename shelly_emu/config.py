@@ -191,6 +191,7 @@ def parse_device(raw: Any, index: int) -> DeviceConfig:
     switch_specs = [
         SwitchChannelSpec(
             name=c.name,
+            has_power="power" in c.sensors,
             has_energy="energy" in c.sensors,
             has_energy_returned="energy_returned" in c.sensors,
             energy_scale=ENERGY_UNITS[c.energy_unit or "kWh"],
@@ -199,7 +200,10 @@ def parse_device(raw: Any, index: int) -> DeviceConfig:
     ]
     em_spec = None
     if em is not None:
-        phase_specs = [EmPhaseSpec("energy" in p.sensors, "energy_returned" in p.sensors) for p in em.phases]
+        phase_specs = [
+            EmPhaseSpec("energy" in p.sensors, "energy_returned" in p.sensors, has_power="power" in p.sensors)
+            for p in em.phases
+        ]
         phase_specs += [EmPhaseSpec() for _ in range(EM_PHASES - len(phase_specs))]
         em_spec = EmSpec(phases=phase_specs, energy_scale=ENERGY_UNITS[em.energy_unit or "kWh"])
 

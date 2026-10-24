@@ -35,6 +35,7 @@ devices:
     assert d.spec.mac == "AABBCCDDEEFF" and d.spec.model == "pro2pm"
     assert d.modbus is False and d.mdns is True and d.bind == "0.0.0.0"
     assert d.spec.switches[0].has_energy and d.spec.switches[0].energy_scale == 1.0
+    assert d.spec.switches[0].has_power and not d.spec.switches[1].has_power
     assert not d.spec.switches[1].has_energy
     assert sorted(d.entity_ids) == ["binary_sensor.door", "light.dryer", "sensor.boiler_energy", "sensor.boiler_power", "switch.boiler"]
 
@@ -62,6 +63,7 @@ devices:
     d = cfg.devices[0]
     assert d.modbus is True
     assert d.spec.em.phases[0].has_energy and not d.spec.em.phases[1].has_energy
+    assert d.spec.em.phases[0].has_power and d.spec.em.phases[1].has_power and not d.spec.em.phases[2].has_power
     assert len(d.spec.em.phases) == 3
 
 

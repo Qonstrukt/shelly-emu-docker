@@ -141,11 +141,11 @@ devices:
     channels:                 # 1..N entries, N = channels of the model
       - switch: switch.boiler           # switch / light / input_boolean entity; its state is the output
         name: Boiler
-        power: sensor.boiler_power      # W   (optional, default 0)
+        power: sensor.boiler_power      # W   (optional; derived from voltage * current * pf if absent)
         energy: sensor.boiler_energy    # total energy (optional; integrated from power if absent)
         energy_unit: kWh                # kWh | Wh; default: the entity's unit_of_measurement, else kWh
         voltage: ...                    # V   (optional)
-        current: ...                    # A   (optional, derived from P/V if absent)
+        current: ...                    # A   (optional, derived from P/V if absent; negative = export)
         energy_returned: ...            # optional
         frequency: ...                  # Hz
         power_factor: ...
@@ -164,10 +164,10 @@ devices:
       neutral_current: ...    # optional
       temperature: ...        # optional
       phases:                 # 1..3 entries (a, b, c); missing phases report 0 W
-        - power: sensor.p1_power_l1     # W, negative = export
+        - power: sensor.p1_power_l1     # W, negative = export (derived from voltage * current * pf if absent)
           voltage: ...                  # V (default 230)
-          current: ...                  # A (derived if absent)
-          apparent_power: ...           # VA (derived if absent)
+          current: ...                  # A (derived if absent; a negative current means export)
+          apparent_power: ...           # VA (derived as voltage * |current| or from pf if absent)
           power_factor: ...             # default 1
           frequency: ...                # default 50
           energy: ...                   # import counter

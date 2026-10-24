@@ -34,6 +34,7 @@ class SwitchChannelSpec:
     """Which values a switch channel has a source for (entity ids are opaque here)."""
 
     name: str = ""
+    has_power: bool = False  # a power source exists (else P is derived from U * I * pf)
     has_energy: bool = False
     has_energy_returned: bool = False
     energy_scale: float = 1000.0  # multiply source energy by this to get Wh
@@ -43,6 +44,7 @@ class SwitchChannelSpec:
 class EmPhaseSpec:
     has_energy: bool = False
     has_energy_returned: bool = False
+    has_power: bool = False
 
 
 @dataclass
@@ -255,15 +257,20 @@ class ShellyDevice:
             v = ch.values
             s.output = state
             s.input = ch.input
-            s.apower = _num(v.get("power"), 0.0) or 0.0
             s.voltage = _num(v.get("voltage"), None)
             s.freq = _num(v.get("frequency"), None)
             s.temp = _num(v.get("temperature"), None)
             current = _num(v.get("current"), None)
+            pf = _num(v.get("power_factor"), None)
+            power = _num(v.get("power"), None)
+            if power is not None or spec.has_power or current is None or s.voltage is None:
+                s.apower = power or 0.0
+            else:
+                # No power source but voltage and current are known: P = U * I * pf
+                s.apower = s.voltage * current * (1.0 if pf is None else pf)
             if current is None:
                 current = abs(s.apower) / s.voltage if s.voltage else 0.0
             s.current = current
-            pf = _num(v.get("power_factor"), None)
             if pf is None:
                 pf = 1.0 if s.apower != 0 else 0.0
             s.pf = pf
@@ -282,15 +289,23 @@ class ShellyDevice:
             for p, (spec, ph) in enumerate(zip(self.spec.em.phases, self._phases)):
                 e: EmPhaseState = em.phase[p]
                 v = ph.values
-                e.act_power = _num(v.get("power"), 0.0) or 0.0
                 e.voltage = _num(v.get("voltage"), 230.0) or 0.0
                 e.freq = _num(v.get("frequency"), 50.0) or 0.0
                 e.pf = _num(v.get("power_factor"), 1.0) or 0.0
+                current = _num(v.get("current"), None)
+                power = _num(v.get("power"), None)
+                if power is not None or spec.has_power or current is None:
+                    e.act_power = power or 0.0
+                else:
+                    # No power source but current (and voltage) are known: P = U * I * pf, I < 0 = export
+                    e.act_power = e.voltage * current * e.pf
                 aprt = _num(v.get("apparent_power"), None)
                 if aprt is None:
-                    aprt = abs(e.act_power) / abs(e.pf) if abs(e.pf) > 0.01 else abs(e.act_power)
+                    if current is not None:
+                        aprt = e.voltage * abs(current)
+                    else:
+                        aprt = abs(e.act_power) / abs(e.pf) if abs(e.pf) > 0.01 else abs(e.act_power)
                 e.aprt_power = aprt
-                current = _num(v.get("current"), None)
                 if current is None:
                     current = e.aprt_power / e.voltage if e.voltage > 0 else 0.0
                 e.current = current

@@ -27,11 +27,11 @@ devices:
     channels:                   # 1..N entries, N = channels of the model
       - switch: switch.boiler   # any switch/light/input_boolean: its state is the Shelly output,
         name: Boiler            # Switch.Set from Sigen becomes switch.turn_on/off (or homeassistant.turn_on/off)
-        power: sensor.boiler_power          # W   (optional, default 0)
+        power: sensor.boiler_power          # W   (optional; derived from voltage * current * pf if absent)
         energy: sensor.boiler_energy        # total energy (optional; integrated from power if absent)
         # energy_unit: kWh                  # kWh | Wh; default: the entity's unit_of_measurement, else kWh
         # voltage: sensor.boiler_voltage    # V   (optional)
-        # current: sensor.boiler_current    # A   (optional, derived from P/V if absent)
+        # current: sensor.boiler_current    # A   (optional, derived from P/V if absent; negative = export)
         # energy_returned: ...              # optional
         # frequency: ...                    # Hz
         # power_factor: ...
@@ -63,11 +63,11 @@ devices:
   #     # neutral_current: sensor.p1_current_n
   #     # temperature: sensor.meter_temperature
   #     phases:                 # 1..3 entries (a, b, c); missing phases report 0 W
-  #       - power: sensor.p1_power_l1      # W, negative = export
+  #       - power: sensor.p1_power_l1      # W, negative = export (derived from voltage * current * pf if absent)
   #         voltage: sensor.p1_voltage_l1  # V (default 230)
   #         energy: sensor.p1_energy_import           # import counter
   #         energy_returned: sensor.p1_energy_export  # export counter
-  #         # current / apparent_power / power_factor / frequency: optional, derived if absent
+  #         # current / apparent_power / power_factor / frequency: optional, derived if absent (negative current = export)
   #       - power: sensor.p1_power_l2
   #         voltage: sensor.p1_voltage_l2
   #       - power: sensor.p1_power_l3

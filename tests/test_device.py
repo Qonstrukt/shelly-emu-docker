@@ -1,6 +1,6 @@
 import pytest
 
-from shelly_emu.device import OPTIMISTIC_SECONDS, DeviceSpec, EmSpec, ShellyDevice, SwitchChannelSpec
+from shelly_emu.device import OPTIMISTIC_SECONDS, DeviceSpec, EmPhaseSpec, EmSpec, ShellyDevice, SwitchChannelSpec
 
 
 def test_identity(pro4pm, pro3em):
@@ -100,3 +100,51 @@ def test_switch_spec_count():
     dev = ShellyDevice(DeviceSpec(model="plusplugs", mac="AABBCCDDEE01", switches=[SwitchChannelSpec()]))
     assert dev.switch_count == 1
     assert dev.model.has_inputs is False
+
+
+def test_switch_power_derived_from_voltage_and_current():
+    dev = ShellyDevice(DeviceSpec(model="pro1pm", mac="AABBCCDDEE10", switches=[SwitchChannelSpec()]))
+    dev.update_switch(0, voltage=230.0, current=2.0)
+    s = dev.snapshot().sw[0]
+    assert s.apower == pytest.approx(460.0) and s.current == 2.0 and s.pf == 1.0
+    dev.update_switch(0, power_factor=0.5)
+    s = dev.snapshot().sw[0]
+    assert s.apower == pytest.approx(230.0) and s.pf == 0.5
+    dev.update_switch(0, current=-1.0, power_factor=None)  # negative current = export
+    assert dev.snapshot().sw[0].apower == pytest.approx(-230.0)
+    dev.update_switch(0, voltage=None)  # voltage unknown: nothing to derive from
+    assert dev.snapshot().sw[0].apower == 0.0
+
+
+def test_switch_power_entity_keeps_priority():
+    dev = ShellyDevice(DeviceSpec(model="pro1pm", mac="AABBCCDDEE11", switches=[SwitchChannelSpec(has_power=True)]))
+    dev.update_switch(0, voltage=230.0, current=2.0, power=100.0)
+    assert dev.snapshot().sw[0].apower == 100.0
+    dev.update_switch(0, power=None)  # power entity unavailable: 0 W, not derived
+    assert dev.snapshot().sw[0].apower == 0.0
+    # a known power value wins even without the flag (direct core users)
+    dev2 = ShellyDevice(DeviceSpec(model="pro1pm", mac="AABBCCDDEE12", switches=[SwitchChannelSpec()]))
+    dev2.update_switch(0, voltage=230.0, current=2.0, power=100.0)
+    assert dev2.snapshot().sw[0].apower == 100.0
+
+
+def test_em_power_derived_from_current(pro3em):
+    pro3em.update_em(0, current=2.0)  # voltage defaults to 230, pf to 1
+    e = pro3em.snapshot().em.phase[0]
+    assert e.act_power == pytest.approx(460.0) and e.aprt_power == pytest.approx(460.0) and e.current == 2.0
+    pro3em.update_em(0, voltage=240.0, current=-3.0, power_factor=0.9)
+    e = pro3em.snapshot().em.phase[0]
+    assert e.act_power == pytest.approx(-648.0)  # export
+    assert e.aprt_power == pytest.approx(720.0)  # U * |I|, independent of pf
+    pro3em.update_em(0, apparent_power=700.0)
+    assert pro3em.snapshot().em.phase[0].aprt_power == 700.0
+
+
+def test_em_power_entity_keeps_priority():
+    spec = DeviceSpec(model="pro3em", mac="AABBCCDDEE13", em=EmSpec(phases=[EmPhaseSpec(has_power=True), EmPhaseSpec(), EmPhaseSpec()]))
+    dev = ShellyDevice(spec)
+    dev.update_em(0, current=2.0, power=50.0)
+    e = dev.snapshot().em.phase[0]
+    assert e.act_power == 50.0 and e.aprt_power == pytest.approx(460.0)
+    dev.update_em(0, power=None)  # unavailable power entity reports 0 W
+    assert dev.snapshot().em.phase[0].act_power == 0.0
